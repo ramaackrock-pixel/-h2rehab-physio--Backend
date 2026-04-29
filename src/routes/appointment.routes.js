@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { 
     createAppointment, 
     getAllAppointments, 
-    updateAppointmentStatus, 
+    updateAppointment, 
     deleteAppointment 
 } from '../controller/appointment.controller.js';
 import { verifyJWT } from '../middleware/auth.middleware.js';
@@ -17,7 +17,7 @@ router.route('/')
     .post(createAppointment);
 
 router.route('/:id')
-    .patch(updateAppointmentStatus)
+    .patch(updateAppointment)
     .delete(deleteAppointment);
 
 export default router;

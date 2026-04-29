@@ -57,6 +57,11 @@ const patientSchema = new Schema({
         type: String,
         trim: true
     },
+    assessmentType: {
+        type: String,
+        enum: ['GENERAL', 'PELVIC_FLOOR'],
+        default: 'GENERAL'
+    },
     assessmentData: {
         type: Object,
         default: null
