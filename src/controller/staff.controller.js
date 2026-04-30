@@ -29,7 +29,30 @@ export const getAllStaff = async (req, res) => {
 // Add a new staff member
 export const addStaff = async (req, res) => {
     try {
-        const { name, email, password, role, department, branch, mobile, avatar, scheduleDays, shift, workingHours } = req.body;
+        const { 
+            name, email, password, role, department, branch, mobile, 
+            avatar, scheduleDays, shift, workingHours,
+            joiningDate, aadharNumber 
+        } = req.body;
+
+        let degreeCertificate = "";
+        if (req.file) {
+            degreeCertificate = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        }
+
+        if (aadharNumber && !/^\d{12}$/.test(aadharNumber)) {
+            return res.status(400).json({
+                success: false,
+                message: "Aadhar number must be exactly 12 digits"
+            });
+        }
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "Email is required"
+            });
+        }
 
         const existingUser = await Staff.findOne({ email: email.toLowerCase() });
         if (existingUser) {
@@ -47,7 +70,10 @@ export const addStaff = async (req, res) => {
             department,
             branch,
             mobile,
-            avatar,
+            avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
+            joiningDate,
+            aadharNumber,
+            degreeCertificate,
             scheduleDays,
             shift,
             workingHours
@@ -77,6 +103,10 @@ export const addStaff = async (req, res) => {
 export const updateStaff = async (req, res) => {
     try {
         const updateData = { ...req.body };
+        
+        if (req.file) {
+            updateData.degreeCertificate = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        }
         if (updateData.password) {
             // Pre-save hook will handle hashing if we use save(), 
             // but for findByIdAndUpdate we need to be careful or just use save()

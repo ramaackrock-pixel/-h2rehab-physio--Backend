@@ -17,6 +17,7 @@ router.route('/')
 
 router.route('/:id')
     .get(getInvoiceById)
-    .patch(updateInvoice);
+    .patch(updateInvoice)
+    .put(updateInvoice);
 
 export default router;

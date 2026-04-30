@@ -37,6 +37,17 @@ const staffSchema = new Schema({
     avatar: {
         type: String
     },
+    joiningDate: {
+        type: String,
+        trim: true
+    },
+    aadharNumber: {
+        type: String,
+        trim: true
+    },
+    degreeCertificate: {
+        type: String
+    },
     status: {
         type: String,
         default: "Active",
