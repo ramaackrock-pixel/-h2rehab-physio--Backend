@@ -15,6 +15,7 @@ export const createAppointment = async (req, res) => {
             duration, // in minutes
             branch,
             sessionType,
+            status,
             details
         } = req.body;
 
@@ -28,6 +29,7 @@ export const createAppointment = async (req, res) => {
         // or just any overlapping ones.
         const overlappingAppointment = await Appointment.findOne({
             therapistId,
+            branch,
             status: { $ne: 'CANCELLED' },
             $or: [
                 {
@@ -76,6 +78,7 @@ export const createAppointment = async (req, res) => {
             duration,
             branch,
             sessionType,
+            status: status || 'PENDING',
             details,
             initials
         });
@@ -193,6 +196,88 @@ export const updateAppointmentStatus = async (req, res) => {
         return res.status(400).json({
             success: false,
             message: "Error updating appointment status",
+            error: error.message
+        });
+    }
+};
+
+// Full update of appointment
+export const updateAppointment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            therapistId,
+            appointmentDate,
+            duration,
+            branch,
+            status
+        } = req.body;
+
+        // If time/therapist/branch is changing, check for conflicts
+        if (appointmentDate || therapistId || branch) {
+            const appointment = await Appointment.findById(id);
+            if (!appointment) return res.status(404).json({ success: false, message: "Appointment not found" });
+
+            const checkTherapistId = therapistId || appointment.therapistId;
+            const checkBranch = branch || appointment.branch;
+            const checkDate = appointmentDate ? new Date(appointmentDate) : appointment.appointmentDate;
+            const checkDuration = duration || appointment.duration;
+
+            const startA = new Date(checkDate);
+            const endA = new Date(startA.getTime() + checkDuration * 60000);
+
+            const overlappingAppointment = await Appointment.findOne({
+                _id: { $ne: id },
+                therapistId: checkTherapistId,
+                branch: checkBranch,
+                status: { $ne: 'CANCELLED' },
+                $and: [
+                    { appointmentDate: { $lt: endA } },
+                    {
+                        $expr: {
+                            $gt: [
+                                { $add: ["$appointmentDate", { $multiply: ["$duration", 60000] }] },
+                                startA
+                            ]
+                        }
+                    }
+                ]
+            });
+
+            if (overlappingAppointment) {
+                return res.status(409).json({
+                    success: false,
+                    message: "Conflict: The therapist already has an appointment in this branch during this time.",
+                    conflict: {
+                        time: overlappingAppointment.time,
+                        patient: overlappingAppointment.patientName
+                    }
+                });
+            }
+        }
+
+        const updateData = { ...req.body };
+        if (req.body.appointmentDate) {
+            const startA = new Date(req.body.appointmentDate);
+            updateData.appointmentDate = startA;
+            updateData.time = startA.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        }
+
+        const appointment = await Appointment.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Appointment updated successfully",
+            appointment
+        });
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: "Error updating appointment",
             error: error.message
         });
     }

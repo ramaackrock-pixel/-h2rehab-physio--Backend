@@ -19,6 +19,11 @@ const branchSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    branchCode: {
+        type: String,
+        required: true,
+        unique: true
+    },
     staffCount: {
         type: Number,
         default: 0
