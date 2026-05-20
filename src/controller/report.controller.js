@@ -3,9 +3,9 @@ import { Billing } from '../models/billing.model.js';
 
 export const getReportsData = async (req, res) => {
     try {
-        let { timeRange } = req.query; // 1Y, 6M, 3M, TODAY
+        let { timeRange, branch } = req.query; // 1Y, 6M, 3M, TODAY, branch
         const userRole = req.admin?.role || req.user?.role;
-        const branch = req.admin?.branch || req.user?.branch;
+        const userBranch = req.admin?.branch || req.user?.branch;
 
         // Force timeRange to TODAY for staff
         if (userRole === "staff") {
@@ -30,10 +30,16 @@ export const getReportsData = async (req, res) => {
         let patientQuery = { createdAt: { $gte: startDate } };
         let invoiceQuery = { date: { $gte: startDate } };
 
-        // Ensure staff only sees their branch
-        if (userRole === "staff" && branch) {
-            patientQuery.branch = branch;
-            invoiceQuery.branch = branch; // Depending on how invoice is structured
+        // Determine branch filter: staff is forced to userBranch; others can pass branch in query
+        const selectedBranch = userRole === "staff" ? userBranch : branch;
+
+        if (selectedBranch && selectedBranch !== "All Branches") {
+            patientQuery.branch = selectedBranch;
+            
+            // Query patients of this branch to filter invoices correctly (since Billing has no branch field)
+            const branchPatients = await Patient.find({ branch: selectedBranch }).select('_id');
+            const patientIds = branchPatients.map(p => p._id);
+            invoiceQuery.patientId = { $in: patientIds };
         }
 
         const patients = await Patient.find(patientQuery);

@@ -18,6 +18,10 @@ const billingSchema = new Schema({
         type: Number,
         required: true
     },
+    discount: {
+        type: Number,
+        default: 0
+    },
     paidAmount: {
         type: Number,
         default: 0
@@ -32,7 +36,12 @@ const billingSchema = new Schema({
         default: 'PENDING'
     },
     initials: { type: String },
-    initialsBg: { type: String, default: 'bg-teal-100 text-teal-700' }
+    initialsBg: { type: String, default: 'bg-teal-100 text-teal-700' },
+    billingType: { type: String },
+    service: { type: String },
+    subService: { type: String },
+    packageCategory: { type: String },
+    sessions: { type: String }
 }, {
     timestamps: true
 });

@@ -1,4 +1,5 @@
 import { Patient } from '../models/patient.model.js';
+import { Branch } from '../models/branch.model.js';
 
 // Get all patients with search and filtering
 export const getAllPatients = async (req, res) => {
@@ -60,6 +61,34 @@ export const getPatientById = async (req, res) => {
 export const createPatient = async (req, res) => {
     try {
         const patientData = req.body;
+        
+        // Generate consecutive PID if branch is provided
+        if (patientData.branch) {
+            const branchDoc = await Branch.findOne({ name: patientData.branch });
+            if (branchDoc) {
+                const branchCode = branchDoc.branchCode;
+                
+                // Find the patient with the highest sequence for this branch
+                // Format: H2F-{branchCode}-NNNN
+                const lastPatient = await Patient.findOne({
+                    branch: patientData.branch,
+                    pid: new RegExp(`^H2F-${branchCode}-\\d{4}$`, 'i')
+                }).sort({ pid: -1 });
+
+                let nextSeq = 1;
+                if (lastPatient) {
+                    const lastPid = lastPatient.pid;
+                    const parts = lastPid.split('-');
+                    const lastSeq = parseInt(parts[2], 10);
+                    if (!isNaN(lastSeq)) {
+                        nextSeq = lastSeq + 1;
+                    }
+                }
+
+                const formattedSeq = String(nextSeq).padStart(4, '0');
+                patientData.pid = `H2F-${branchCode}-${formattedSeq}`;
+            }
+        }
         
         // Basic initials generation if not provided
         if (!patientData.initials && patientData.name) {

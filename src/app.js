@@ -13,11 +13,18 @@ import branchRouter from './routes/branch.routes.js'
 import admissionRouter from './routes/admission.routes.js'
 import doctorRouter from './routes/doctor.routes.js'
 import reportRouter from './routes/report.routes.js'
+import serviceRouter from './routes/service.routes.js'
+import packageRouter from './routes/package.routes.js'
 
 const app = express();
 
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:5174'], // Supporting both default Vite ports
+    origin: [
+        'https://health2fit.ackrock.com',
+        'http://health2fit.ackrock.com',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173'
+    ],
     credentials: true
 }))
 
@@ -45,5 +52,7 @@ app.use("/api/v1/branches", branchRouter)
 app.use("/api/v1/admissions", admissionRouter)
 app.use("/api/v1/doctors", doctorRouter)
 app.use("/api/v1/reports", reportRouter)
+app.use("/api/v1/services", serviceRouter)
+app.use("/api/v1/packages", packageRouter)
 
 export default app;

@@ -4,7 +4,7 @@ import { Patient } from '../models/patient.model.js';
 // Create a new invoice
 export const createInvoice = async (req, res) => {
     try {
-        const { patientId, totalAmount, paidAmount, status } = req.body;
+        const { patientId, totalAmount, paidAmount, discount, status, billingType, service, subService, packageCategory, sessions } = req.body;
 
         const patient = await Patient.findById(patientId);
         if (!patient) {
@@ -14,17 +14,23 @@ export const createInvoice = async (req, res) => {
             });
         }
 
-        const dueAmount = totalAmount - (paidAmount || 0);
+        const dueAmount = totalAmount - (discount || 0) - (paidAmount || 0);
 
         const billing = new Billing({
             patientId,
             patientName: patient.name,
             totalAmount,
+            discount: discount || 0,
             paidAmount: paidAmount || 0,
             dueAmount,
             status: status || 'PENDING',
             initials: patient.initials,
-            initialsBg: patient.initialsBg
+            initialsBg: patient.initialsBg,
+            billingType,
+            service,
+            subService,
+            packageCategory,
+            sessions
         });
 
         await billing.save();
@@ -106,7 +112,7 @@ export const updateInvoice = async (req, res) => {
 
         if (paidAmount !== undefined) {
             invoice.paidAmount = paidAmount;
-            invoice.dueAmount = invoice.totalAmount - paidAmount;
+            invoice.dueAmount = invoice.totalAmount - (invoice.discount || 0) - paidAmount;
         }
 
         if (status) invoice.status = status;
