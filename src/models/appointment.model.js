@@ -52,6 +52,17 @@ const appointmentSchema = new Schema({
         enum: ['CONFIRMED', 'PENDING', 'COMPLETED', 'CANCELLED'],
         default: 'PENDING'
     },
+    liveStatus: {
+        type: String,
+        enum: ['SCHEDULED', 'CHECKED_IN', 'CHECKED_OUT'],
+        default: 'SCHEDULED'
+    },
+    checkedInAt: {
+        type: Date
+    },
+    checkedOutAt: {
+        type: Date
+    },
     details: appointmentDetailsSchema,
     initials: { type: String },
     initialsBg: { type: String, default: 'bg-teal-100 text-teal-700' }

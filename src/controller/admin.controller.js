@@ -1,10 +1,12 @@
 import { Admin } from '../models/admin.model.js'
+import { Staff } from '../models/staff.model.js'
 import { Patient } from '../models/patient.model.js'
 import { Appointment } from '../models/appointment.model.js'
 import { Billing } from '../models/billing.model.js'
 import { MedicalRecord } from '../models/medicalRecord.model.js'
 import { Admission } from '../models/admission.model.js'
 import jwt from 'jsonwebtoken'
+
 
 const generateAccessAndRefereshTokens = async (userId) => {
     try {
@@ -28,9 +30,15 @@ const signIn = async (req, res) => {
         return res.status(400).json({ message: 'All Fields are required' })
     }
 
-    const user = await Admin.findOne({ email: email.toLowerCase() })
+    let user = await Admin.findOne({ email: email.toLowerCase() })
+    let isStaffUser = false;
+
     if (!user) {
-        return res.status(404).json({ message: 'User is not registered', isValidAdmin: false })
+        user = await Staff.findOne({ email: email.toLowerCase() })
+        if (!user) {
+            return res.status(404).json({ message: 'User is not registered', isValidAdmin: false })
+        }
+        isStaffUser = true;
     }
 
     const isPasswordValid = await user.isPasswordCorrect(password)
@@ -38,7 +46,17 @@ const signIn = async (req, res) => {
         return res.status(401).json({ message: 'Invalid user credentials', isValidAdmin: false })
     }
 
-    const { accessToken, refreshToken } = await generateAccessAndRefereshTokens(user._id)
+    let accessToken, refreshToken;
+    if (isStaffUser) {
+        accessToken = user.generateAccessToken()
+        refreshToken = user.generateRefreshToken()
+        user.refreshToken = refreshToken
+        await user.save({ validateBeforeSave: false })
+    } else {
+        const tokens = await generateAccessAndRefereshTokens(user._id)
+        accessToken = tokens.accessToken
+        refreshToken = tokens.refreshToken
+    }
 
     const options = {
         httpOnly: true,
@@ -53,25 +71,41 @@ const signIn = async (req, res) => {
         .json({
             message: 'User is registered',
             isValidAdmin: true,
-            role: user.role,
+            role: isStaffUser ? 'staff' : user.role,  // system role for routing
+            jobRole: isStaffUser ? user.role : undefined, // job title for display
             name: user.name,
+            branch: user.branch || undefined,
             accessToken,
             refreshToken
         })
 }
 
 const logout = async (req, res) => {
-    await Admin.findByIdAndUpdate(
-        req.user._id,
-        {
-            $unset: {
-                refreshToken: 1
+    if (req.user.constructor.modelName === 'Admin') {
+        await Admin.findByIdAndUpdate(
+            req.user._id,
+            {
+                $unset: {
+                    refreshToken: 1
+                }
+            },
+            {
+                new: true
             }
-        },
-        {
-            new: true
-        }
-    )
+        )
+    } else {
+        await Staff.findByIdAndUpdate(
+            req.user._id,
+            {
+                $unset: {
+                    refreshToken: 1
+                }
+            },
+            {
+                new: true
+            }
+        )
+    }
 
     const options = {
         httpOnly: true,

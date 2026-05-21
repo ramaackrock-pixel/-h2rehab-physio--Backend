@@ -2,6 +2,7 @@ import dotenv from 'dotenv'
 import app from './app.js';
 import connectDB from './config/database.js';
 import { initReminderCron } from './services/reminder.service.js';
+import { initNotificationCron } from './services/notification.service.js';
 
 
 dotenv.config({
@@ -20,6 +21,9 @@ const startServer = async () => {
             
             // Initialize daily WhatsApp reminders
             initReminderCron();
+
+            // Initialize consultation end notifications cron
+            initNotificationCron();
         });
 
     } catch (error) {

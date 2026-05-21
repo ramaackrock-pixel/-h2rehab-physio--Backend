@@ -152,7 +152,15 @@ export const getAllAppointments = async (req, res) => {
 
         if (therapistId) query.therapistId = therapistId;
         if (status) query.status = status;
-        if (branch) query.branch = branch;
+        
+        // Enforce branch filter for staff users; allow admins/superadmins to see all or query by branch
+        if (req.user && req.user.constructor.modelName === 'Staff') {
+            if (req.user.branch) {
+                query.branch = req.user.branch;
+            }
+        } else if (branch) {
+            query.branch = branch;
+        }
 
         const appointments = await Appointment.find(query).sort({ appointmentDate: 1 });
 
@@ -301,6 +309,73 @@ export const deleteAppointment = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Error deleting appointment",
+            error: error.message
+        });
+    }
+};
+
+// Check in patient to consultation
+export const checkinAppointment = async (req, res) => {
+    try {
+        const appointment = await Appointment.findByIdAndUpdate(
+            req.params.id,
+            {
+                liveStatus: 'CHECKED_IN',
+                checkedInAt: new Date()
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!appointment) {
+            return res.status(404).json({
+                success: false,
+                message: "Appointment not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Patient checked in successfully for consultation",
+            appointment
+        });
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: "Error checking in patient",
+            error: error.message
+        });
+    }
+};
+
+// Check out patient from consultation
+export const checkoutAppointment = async (req, res) => {
+    try {
+        const appointment = await Appointment.findByIdAndUpdate(
+            req.params.id,
+            {
+                liveStatus: 'CHECKED_OUT',
+                checkedOutAt: new Date(),
+                status: 'COMPLETED'
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!appointment) {
+            return res.status(404).json({
+                success: false,
+                message: "Appointment not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Patient checked out successfully from consultation",
+            appointment
+        });
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: "Error checking out patient",
             error: error.message
         });
     }

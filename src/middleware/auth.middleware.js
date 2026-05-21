@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { Admin } from '../models/admin.model.js'
+import { Staff } from '../models/staff.model.js'
 
 export const verifyJWT = async (req, res, next) => {
     try {
@@ -11,7 +12,11 @@ export const verifyJWT = async (req, res, next) => {
 
         const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)
 
-        const user = await Admin.findById(decodedToken?._id).select("-password -refreshToken")
+        let user = await Admin.findById(decodedToken?._id).select("-password -refreshToken")
+
+        if (!user) {
+            user = await Staff.findById(decodedToken?._id).select("-password -refreshToken")
+        }
 
         if (!user) {
             return res.status(401).json({ message: "Invalid Access Token" })

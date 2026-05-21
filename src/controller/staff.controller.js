@@ -29,6 +29,13 @@ export const getAllStaff = async (req, res) => {
 // Add a new staff member
 export const addStaff = async (req, res) => {
     try {
+        if (req.user?.role !== 'admin' && req.user?.role !== 'superadmin') {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized access: Only administrators can add staff members"
+            });
+        }
+
         const { 
             name, email, password, role, department, branch, mobile, 
             avatar, scheduleDays, shift, workingHours,
@@ -102,7 +109,19 @@ export const addStaff = async (req, res) => {
 // Update staff member
 export const updateStaff = async (req, res) => {
     try {
+        if (req.user?.role !== 'admin' && req.user?.role !== 'superadmin') {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized access: Only administrators can update staff members"
+            });
+        }
+
         const updateData = { ...req.body };
+        
+        // Remove empty password from updateData to prevent validation and overwrite failures
+        if (updateData.password === '' || updateData.password === undefined || updateData.password === null) {
+            delete updateData.password;
+        }
         
         if (req.file) {
             updateData.degreeCertificate = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
@@ -151,6 +170,13 @@ export const updateStaff = async (req, res) => {
 // Delete staff member
 export const deleteStaff = async (req, res) => {
     try {
+        if (req.user?.role !== 'admin' && req.user?.role !== 'superadmin') {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized access: Only administrators can delete staff members"
+            });
+        }
+
         const staff = await Staff.findByIdAndDelete(req.params.id);
         if (!staff) {
             return res.status(404).json({
@@ -166,6 +192,143 @@ export const deleteStaff = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Error deleting staff member",
+            error: error.message
+        });
+    }
+};
+
+// Logged-in Staff check-in (Today only)
+export const selfCheckIn = async (req, res) => {
+    try {
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+        const staff = await Staff.findById(req.user._id);
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: "Staff profile not found"
+            });
+        }
+
+        const alreadyCheckedIn = (staff.attendanceLogs || []).some(log => log.date === todayStr);
+        if (alreadyCheckedIn) {
+            return res.status(400).json({
+                success: false,
+                message: "You have already checked in for today."
+            });
+        }
+
+        const checkInTime = new Date().toLocaleTimeString('en-US', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        staff.attendanceLogs = staff.attendanceLogs || [];
+        staff.attendanceLogs.push({
+            date: todayStr,
+            checkInTime,
+            status: 'checked in',
+            location: req.body.location || 'Location details not provided'
+        });
+
+        await staff.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Successfully checked in for today!",
+            attendanceLogs: staff.attendanceLogs
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to perform check-in",
+            error: error.message
+        });
+    }
+};
+
+// Logged-in Staff check-out (Today only)
+export const selfCheckOut = async (req, res) => {
+    try {
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+        const staff = await Staff.findById(req.user._id);
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: "Staff profile not found"
+            });
+        }
+
+        const todayLogIndex = (staff.attendanceLogs || []).findIndex(log => log.date === todayStr);
+        if (todayLogIndex === -1) {
+            return res.status(400).json({
+                success: false,
+                message: "You must check in first before checking out."
+            });
+        }
+
+        const todayLog = staff.attendanceLogs[todayLogIndex];
+        if (todayLog.checkOutTime || todayLog.status === 'presented today') {
+            return res.status(400).json({
+                success: false,
+                message: "You have already checked out for today."
+            });
+        }
+
+        const checkOutTime = new Date().toLocaleTimeString('en-US', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        todayLog.checkOutTime = checkOutTime;
+        todayLog.status = 'presented today';
+        
+        if (req.body.location) {
+            todayLog.location = todayLog.location && todayLog.location !== req.body.location
+                ? `${todayLog.location} (In) / ${req.body.location} (Out)`
+                : req.body.location;
+        }
+
+        staff.attendanceLogs[todayLogIndex] = todayLog;
+        // Mark attendanceLogs as modified to ensure Mongoose saves the updated array element
+        staff.markModified('attendanceLogs');
+        await staff.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Successfully checked out for today!",
+            attendanceLogs: staff.attendanceLogs
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to perform check-out",
+            error: error.message
+        });
+    }
+};
+
+// Get profile details of currently logged-in staff
+export const getMyProfile = async (req, res) => {
+    try {
+        const staff = await Staff.findById(req.user._id).select("-password -refreshToken");
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: "Staff member profile not found"
+            });
+        }
+        return res.status(200).json({
+            success: true,
+            staff
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Error fetching staff profile",
             error: error.message
         });
     }

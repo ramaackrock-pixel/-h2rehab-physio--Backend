@@ -1,4 +1,7 @@
 import mongoose, { Schema } from 'mongoose'
+import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
+
 
 const staffSchema = new Schema({
     name: {
@@ -95,4 +98,43 @@ const staffSchema = new Schema({
     timestamps: true
 });
 
+staffSchema.pre("save", async function () {
+    if (!this.isModified("password")) return;
+    this.password = await bcrypt.hash(this.password, 10);
+})
+
+staffSchema.methods.isPasswordCorrect = async function (password) {
+    return await bcrypt.compare(password, this.password)
+}
+
+staffSchema.methods.generateAccessToken = function () {
+    return jwt.sign(
+        {
+            _id: this._id,
+            email: this.email,
+            name: this.name,
+            role: 'staff',        // system access level
+            jobRole: this.role,   // display role e.g. 'Physiotherapist'
+            branch: this.branch
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        {
+            expiresIn: process.env.ACCESS_TOKEN_EXPIRY
+        }
+    )
+}
+
+staffSchema.methods.generateRefreshToken = function () {
+    return jwt.sign(
+        {
+            _id: this._id,
+        },
+        process.env.REFRESH_TOKEN_SECRET,
+        {
+            expiresIn: process.env.REFRESH_TOKEN_EXPIRY
+        }
+    )
+}
+
 export const Staff = mongoose.model('Staff', staffSchema);
+

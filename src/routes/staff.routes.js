@@ -5,7 +5,10 @@ import {
     getAllStaff, 
     addStaff, 
     updateStaff, 
-    deleteStaff 
+    deleteStaff,
+    selfCheckIn,
+    selfCheckOut,
+    getMyProfile
 } from '../controller/staff.controller.js';
 import { verifyJWT } from '../middleware/auth.middleware.js';
 
@@ -28,6 +31,10 @@ const upload = multer({
 });
 
 router.use(verifyJWT);
+
+router.route('/profile/me').get(getMyProfile);
+router.route('/attendance/check-in').post(selfCheckIn);
+router.route('/attendance/check-out').post(selfCheckOut);
 
 router.route('/')
     .get(getAllStaff)
