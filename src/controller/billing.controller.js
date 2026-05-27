@@ -4,7 +4,7 @@ import { Patient } from '../models/patient.model.js';
 // Create a new invoice
 export const createInvoice = async (req, res) => {
     try {
-        const { patientId, totalAmount, paidAmount, discount, status, billingType, service, subService, packageCategory, sessions } = req.body;
+        const { patientId, totalAmount, paidAmount, discount, status, billingType, service, subService, packageCategory, sessions, paymentMode, brace, nutraceutical, lab } = req.body;
 
         const patient = await Patient.findById(patientId);
         if (!patient) {
@@ -30,7 +30,11 @@ export const createInvoice = async (req, res) => {
             service,
             subService,
             packageCategory,
-            sessions
+            sessions,
+            paymentMode,
+            brace,
+            nutraceutical,
+            lab
         });
 
         await billing.save();

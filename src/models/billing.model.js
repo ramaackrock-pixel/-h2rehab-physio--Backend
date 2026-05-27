@@ -41,7 +41,11 @@ const billingSchema = new Schema({
     service: { type: String },
     subService: { type: String },
     packageCategory: { type: String },
-    sessions: { type: String }
+    sessions: { type: String },
+    paymentMode: { type: String, default: 'Cash' },
+    brace: { type: String, default: '' },
+    nutraceutical: { type: String, default: '' },
+    lab: { type: String, default: '' }
 }, {
     timestamps: true
 });
