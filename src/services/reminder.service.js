@@ -75,14 +75,14 @@ export const checkAndSendDailyReminders = async () => {
 };
 
 /**
- * Initializes the 9:00 AM daily cron job
+ * Initializes the 8:00 AM daily cron job
  */
 export const initReminderCron = () => {
-    console.log('Reminder Service: Initializing 9:00 AM daily cron job...');
+    console.log('Reminder Service: Initializing 8:00 AM daily cron job...');
 
-    // Schedule task to run at 9:00 AM every day
+    // Schedule task to run at 8:00 AM every day
     // Cron pattern: minute hour day-of-month month day-of-week
-    cron.schedule('0 9 * * *', () => {
+    cron.schedule('0 8 * * *', () => {
         checkAndSendDailyReminders();
     }, {
         scheduled: true,

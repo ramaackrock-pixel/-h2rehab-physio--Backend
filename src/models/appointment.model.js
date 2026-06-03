@@ -65,7 +65,9 @@ const appointmentSchema = new Schema({
     },
     details: appointmentDetailsSchema,
     initials: { type: String },
-    initialsBg: { type: String, default: 'bg-teal-100 text-teal-700' }
+    initialsBg: { type: String, default: 'bg-teal-100 text-teal-700' },
+    reminderJobId: { type: String },
+    reminderSent: { type: Boolean, default: false }
 }, {
     timestamps: true
 });

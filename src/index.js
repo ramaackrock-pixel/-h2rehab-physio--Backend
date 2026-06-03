@@ -24,6 +24,9 @@ const startServer = async () => {
 
             // Initialize consultation end notifications cron
             initNotificationCron();
+
+            // Initialize BullMQ Queue Worker
+            import('./services/queue.service.js').catch(err => console.error("Error loading queue service:", err));
         });
 
     } catch (error) {

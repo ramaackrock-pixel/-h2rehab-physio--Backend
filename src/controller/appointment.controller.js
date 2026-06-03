@@ -2,6 +2,7 @@ import { Appointment } from '../models/appointment.model.js';
 import mongoose from 'mongoose';
 import axios from 'axios';
 import FormData from 'form-data';
+import { appointmentReminderQueue } from '../services/queue.service.js';
 
 // Create a new appointment with conflict checking
 export const createAppointment = async (req, res) => {
@@ -84,6 +85,30 @@ export const createAppointment = async (req, res) => {
         });
 
         await appointment.save();
+
+        // --- Schedule 30-min Delayed Reminder ---
+        try {
+            const reminderTime = startA.getTime() - (30 * 60 * 1000);
+            const delay = Math.max(0, reminderTime - Date.now()); // If < 30 mins, send immediately (delay 0)
+            
+            const job = await appointmentReminderQueue.add("appointment-reminder", {
+                appointmentId: appointment._id,
+                patientName,
+                therapistName,
+                branch,
+                time: appointment.time,
+                phone: details?.phone
+            }, {
+                delay,
+                attempts: 3,
+                backoff: { type: "exponential", delay: 60000 }
+            });
+            
+            appointment.reminderJobId = job.id;
+            await appointment.save();
+        } catch (jobError) {
+            console.error("Failed to schedule reminder job:", jobError);
+        }
 
         // --- WhatsApp Notification ---
         let recipientPhone = (details?.phone || '').replace(/\D/g, '');
@@ -222,10 +247,10 @@ export const updateAppointment = async (req, res) => {
         } = req.body;
 
         // If time/therapist/branch is changing, check for conflicts
-        if (appointmentDate || therapistId || branch) {
-            const appointment = await Appointment.findById(id);
-            if (!appointment) return res.status(404).json({ success: false, message: "Appointment not found" });
+        const appointment = await Appointment.findById(id);
+        if (!appointment) return res.status(404).json({ success: false, message: "Appointment not found" });
 
+        if (appointmentDate || therapistId || branch) {
             const checkTherapistId = therapistId || appointment.therapistId;
             const checkBranch = branch || appointment.branch;
             const checkDate = appointmentDate ? new Date(appointmentDate) : appointment.appointmentDate;
@@ -269,9 +294,38 @@ export const updateAppointment = async (req, res) => {
             const startA = new Date(req.body.appointmentDate);
             updateData.appointmentDate = startA;
             updateData.time = startA.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+            // --- Reschedule Reminder ---
+            try {
+                if (appointment.reminderJobId) {
+                    const oldJob = await appointmentReminderQueue.getJob(appointment.reminderJobId);
+                    if (oldJob) await oldJob.remove();
+                }
+                
+                const reminderTime = startA.getTime() - (30 * 60 * 1000);
+                const delay = Math.max(0, reminderTime - Date.now());
+                
+                const job = await appointmentReminderQueue.add("appointment-reminder", {
+                    appointmentId: appointment._id,
+                    patientName: updateData.patientName || appointment.patientName,
+                    therapistName: updateData.therapistName || appointment.therapistName,
+                    branch: updateData.branch || appointment.branch,
+                    time: updateData.time,
+                    phone: updateData.details?.phone || appointment.details?.phone
+                }, {
+                    delay,
+                    attempts: 3,
+                    backoff: { type: "exponential", delay: 60000 }
+                });
+                
+                updateData.reminderJobId = job.id;
+                updateData.reminderSent = false;
+            } catch (jobError) {
+                console.error("Failed to reschedule reminder job:", jobError);
+            }
         }
 
-        const appointment = await Appointment.findByIdAndUpdate(
+        const updatedAppointment = await Appointment.findByIdAndUpdate(
             id,
             updateData,
             { new: true, runValidators: true }
@@ -280,7 +334,7 @@ export const updateAppointment = async (req, res) => {
         return res.status(200).json({
             success: true,
             message: "Appointment updated successfully",
-            appointment
+            appointment: updatedAppointment
         });
     } catch (error) {
         return res.status(400).json({
@@ -301,6 +355,17 @@ export const deleteAppointment = async (req, res) => {
                 message: "Appointment not found"
             });
         }
+
+        // Remove scheduled job if it exists
+        try {
+            if (appointment.reminderJobId) {
+                const oldJob = await appointmentReminderQueue.getJob(appointment.reminderJobId);
+                if (oldJob) await oldJob.remove();
+            }
+        } catch (jobError) {
+            console.error("Failed to remove reminder job during deletion:", jobError);
+        }
+
         return res.status(200).json({
             success: true,
             message: "Appointment deleted successfully"
