@@ -16,6 +16,7 @@ import reportRouter from './routes/report.routes.js'
 import serviceRouter from './routes/service.routes.js'
 import packageRouter from './routes/package.routes.js'
 import notificationRouter from './routes/notification.routes.js'
+import campaignRouter from './routes/campaign.routes.js'
 
 const app = express();
 
@@ -56,5 +57,6 @@ app.use("/api/v1/reports", reportRouter)
 app.use("/api/v1/services", serviceRouter)
 app.use("/api/v1/packages", packageRouter)
 app.use("/api/v1/notifications", notificationRouter)
+app.use("/api/v1/campaign", campaignRouter)
 
 export default app;
