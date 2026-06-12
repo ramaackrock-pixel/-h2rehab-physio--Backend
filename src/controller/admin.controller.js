@@ -75,6 +75,7 @@ const signIn = async (req, res) => {
             jobRole: isStaffUser ? user.role : undefined, // job title for display
             name: user.name,
             branch: user.branch || undefined,
+            avatar: user.avatar || undefined,
             accessToken,
             refreshToken
         })
@@ -207,7 +208,7 @@ const changePassword = async (req, res) => {
 const wipeData = async (req, res) => {
     // Highly restrictive endpoint. Ensure only superadmin or authorized admins can do this.
     // Assuming verifyJWT middleware checks req.user
-    if (!req.user || (req.user.role !== 'superadmin' && req.user.role !== 'admin')) {
+    if (!req.user || req.user.role !== 'superadmin') {
         return res.status(403).json({ message: 'Unauthorized to perform this destructive action' });
     }
 

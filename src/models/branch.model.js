@@ -45,6 +45,10 @@ const branchSchema = new mongoose.Schema({
         weeklyRevenue: [Number],
         revenueGrowth: Number
     },
+    coordinates: {
+        lat: Number,
+        lng: Number
+    },
     image: {
         type: String
     }

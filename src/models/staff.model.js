@@ -67,6 +67,11 @@ const staffSchema = new Schema({
         type: String,
         trim: true
     },
+    workingMode: {
+        type: String,
+        trim: true,
+        default: 'Full time'
+    },
     workingHours: {
         type: String,
         trim: true

@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { sendCampaign } from '../controller/campaign.controller.js';
+import { sendCampaign, getCampaignStatus, resetCampaignBadges } from '../controller/campaign.controller.js';
 import { verifyJWT } from '../middleware/auth.middleware.js';
 import path from 'path';
 
@@ -23,6 +23,8 @@ const upload = multer({
 
 router.use(verifyJWT);
 
+router.route('/status').get(getCampaignStatus);
 router.route('/send-all').post(upload.single('image'), sendCampaign);
+router.route('/reset-badges').post(resetCampaignBadges);
 
 export default router;

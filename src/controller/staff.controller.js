@@ -1,4 +1,18 @@
 import { Staff } from '../models/staff.model.js';
+import { Branch } from '../models/branch.model.js';
+
+// Haversine formula to calculate distance in meters
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3; // Earth radius in meters
+    const rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in meters
+};
 
 // Get all staff members
 export const getAllStaff = async (req, res) => {
@@ -36,15 +50,29 @@ export const addStaff = async (req, res) => {
             });
         }
 
-        const { 
-            name, email, password, role, department, branch, mobile, 
-            avatar, scheduleDays, shift, workingHours,
-            joiningDate, aadharNumber 
+        const {
+            name, email, password, role, department, branch, mobile,
+            avatar, scheduleDays, shift, workingHours, workingMode,
+            joiningDate, aadharNumber
         } = req.body;
 
         let degreeCertificate = "";
-        if (req.file) {
-            degreeCertificate = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        let finalAvatar = avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`;
+
+        if (req.files) {
+            if (req.files.degreeCertificate && req.files.degreeCertificate[0]) {
+                degreeCertificate = `${req.protocol}://${req.get('host')}/uploads/${req.files.degreeCertificate[0].filename}`;
+            }
+            if (req.files.photo && req.files.photo[0]) {
+                finalAvatar = `${req.protocol}://${req.get('host')}/uploads/${req.files.photo[0].filename}`;
+            }
+        }
+
+        if (!req.files || !req.files.photo || !req.files.photo[0]) {
+            return res.status(400).json({
+                success: false,
+                message: "Photo is required"
+            });
         }
 
         if (aadharNumber && !/^\d{12}$/.test(aadharNumber)) {
@@ -77,12 +105,13 @@ export const addStaff = async (req, res) => {
             department,
             branch,
             mobile,
-            avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
+            avatar: finalAvatar,
             joiningDate,
             aadharNumber,
             degreeCertificate,
             scheduleDays,
             shift,
+            workingMode: workingMode || 'Full time',
             workingHours
         });
 
@@ -117,24 +146,29 @@ export const updateStaff = async (req, res) => {
         }
 
         const updateData = { ...req.body };
-        
+
         // Remove empty password from updateData to prevent validation and overwrite failures
         if (updateData.password === '' || updateData.password === undefined || updateData.password === null) {
             delete updateData.password;
         }
-        
-        if (req.file) {
-            updateData.degreeCertificate = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+
+        if (req.files) {
+            if (req.files.degreeCertificate && req.files.degreeCertificate[0]) {
+                updateData.degreeCertificate = `${req.protocol}://${req.get('host')}/uploads/${req.files.degreeCertificate[0].filename}`;
+            }
+            if (req.files.photo && req.files.photo[0]) {
+                updateData.avatar = `${req.protocol}://${req.get('host')}/uploads/${req.files.photo[0].filename}`;
+            }
         }
         if (updateData.password) {
             // Pre-save hook will handle hashing if we use save(), 
             // but for findByIdAndUpdate we need to be careful or just use save()
             const user = await Staff.findById(req.params.id);
             if (!user) return res.status(404).json({ success: false, message: "Staff not found" });
-            
+
             Object.assign(user, updateData);
             await user.save();
-            
+
             const userResponse = user.toObject();
             delete userResponse.password;
             return res.status(200).json({ success: true, staff: userResponse });
@@ -210,6 +244,44 @@ export const selfCheckIn = async (req, res) => {
             });
         }
 
+        // --- GPS Geolocation Verification ---
+        const locationStr = req.body.location || '';
+        const match = locationStr.match(/GPS Coordinates: \[([0-9.-]+),\s*([0-9.-]+)\]/);
+
+        if (!match) {
+            return res.status(403).json({
+                success: false,
+                message: "Location verification failed. Please allow Location/GPS permissions in your browser."
+            });
+        }
+
+        const staffLat = parseFloat(match[1]);
+        const staffLon = parseFloat(match[2]);
+
+        const branch = await Branch.findOne({ name: staff.branch });
+        if (!branch) {
+            return res.status(400).json({
+                success: false,
+                message: `Your assigned branch '${staff.branch}' was not found in the system. Please update your profile.`
+            });
+        }
+        if (!branch.coordinates || !branch.coordinates.lat) {
+            return res.status(400).json({
+                success: false,
+                message: `GPS coordinates are missing for '${branch.name}'. An administrator must configure them first.`
+            });
+        }
+
+        const distance = calculateDistance(staffLat, staffLon, branch.coordinates.lat, branch.coordinates.lng);
+
+        if (distance > 100) { // Max 100 meters radius
+            return res.status(403).json({
+                success: false,
+                message: `You are ${Math.round(distance)}m away from ${branch.name}. You must be inside the clinic to check in.`
+            });
+        }
+        // ------------------------------------
+
         const alreadyCheckedIn = (staff.attendanceLogs || []).some(log => log.date === todayStr);
         if (alreadyCheckedIn) {
             return res.status(400).json({
@@ -261,6 +333,44 @@ export const selfCheckOut = async (req, res) => {
             });
         }
 
+        // --- GPS Geolocation Verification ---
+        const locationStr = req.body.location || '';
+        const match = locationStr.match(/GPS Coordinates: \[([0-9.-]+),\s*([0-9.-]+)\]/);
+
+        if (!match) {
+            return res.status(403).json({
+                success: false,
+                message: "Location verification failed. Please allow Location/GPS permissions in your browser."
+            });
+        }
+
+        const staffLat = parseFloat(match[1]);
+        const staffLon = parseFloat(match[2]);
+
+        const branch = await Branch.findOne({ name: staff.branch });
+        if (!branch) {
+            return res.status(400).json({
+                success: false,
+                message: `Your assigned branch '${staff.branch}' was not found in the system. Please update your profile.`
+            });
+        }
+        if (!branch.coordinates || !branch.coordinates.lat) {
+            return res.status(400).json({
+                success: false,
+                message: `GPS coordinates are missing for '${branch.name}'. An administrator must configure them first.`
+            });
+        }
+
+        const distance = calculateDistance(staffLat, staffLon, branch.coordinates.lat, branch.coordinates.lng);
+
+        if (distance > 100) { // Max 100 meters radius
+            return res.status(403).json({
+                success: false,
+                message: `You are ${Math.round(distance)}m away from ${branch.name}. You must be inside the clinic to check out.`
+            });
+        }
+        // ------------------------------------
+
         const todayLogIndex = (staff.attendanceLogs || []).findIndex(log => log.date === todayStr);
         if (todayLogIndex === -1) {
             return res.status(400).json({
@@ -285,7 +395,7 @@ export const selfCheckOut = async (req, res) => {
 
         todayLog.checkOutTime = checkOutTime;
         todayLog.status = 'presented today';
-        
+
         if (req.body.location) {
             todayLog.location = todayLog.location && todayLog.location !== req.body.location
                 ? `${todayLog.location} (In) / ${req.body.location} (Out)`

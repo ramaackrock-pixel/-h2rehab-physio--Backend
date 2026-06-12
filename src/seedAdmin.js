@@ -11,22 +11,28 @@ const seedAdmin = async () => {
 
         const users = [
             {
-                name: 'Super Admin',
-                email: 'superadmin@gmail.com',
-                password: 'superadmin123',
+                name: 'Hariharan',
+                email: 'hariharan188@gmail.com',
+                password: 'password123',
                 role: 'superadmin'
             },
             {
-                name: 'Admin',
-                email: 'admin@gmail.com',
-                password: 'admin123',
+                name: 'Sangeetha',
+                email: 'sangeephysio08@gmail.com',
+                password: 'password123',
+                role: 'superadmin'
+            },
+            {
+                name: 'Samy',
+                email: 'mr.samyrvs@gmail.com',
+                password: 'samy123',
                 role: 'admin'
             },
             {
-                name: 'Staff',
-                email: 'staff@gmail.com',
-                password: 'staff123',
-                role: 'staff'
+                name: 'Princy',
+                email: 'princyprincyprincy879@gmail.com',
+                password: 'princy134',
+                role: 'admin'
             }
         ];
 

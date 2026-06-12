@@ -38,10 +38,10 @@ router.route('/attendance/check-out').post(selfCheckOut);
 
 router.route('/')
     .get(getAllStaff)
-    .post(upload.single('degreeCertificate'), addStaff);
+    .post(upload.fields([{ name: 'degreeCertificate', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), addStaff);
 
 router.route('/:id')
-    .put(upload.single('degreeCertificate'), updateStaff)
+    .put(upload.fields([{ name: 'degreeCertificate', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), updateStaff)
     .delete(deleteStaff);
 
 export default router;

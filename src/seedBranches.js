@@ -15,14 +15,16 @@ const seedBranches = async () => {
                 address: 'No 15/4b kellys road ,Kilpauk ,Chennai 10',
                 manager: 'Dr Sangeetha Hariharan',
                 phone: '8056174167',
-                branchCode: '01'
+                branchCode: '01',
+                coordinates: { lat: 13.084822, lng: 80.2457094 }
             },
             {
                 name: 'T.Nagar branch',
                 address: 'No 52/83 Bazulaah road,T nagar,Chennai 17',
                 manager: 'Dr.C.Hariharan',
                 phone: '9566244747',
-                branchCode: '02'
+                branchCode: '02',
+                coordinates: { lat: 13.0473316, lng: 80.2337802 }
             },
 
             {
@@ -30,7 +32,8 @@ const seedBranches = async () => {
                 address: 'No 16 , Syndicate Bank Colony,Pallikaranai,Chennai 100',
                 manager: 'Dr.C.Hariharan',
                 phone: '9566244747',
-                branchCode: '03'
+                branchCode: '03',
+                coordinates: { lat: 12.9348, lng: 80.2137 } // Dummy coordinate for unopened branch
             }
 
         ];
@@ -41,8 +44,11 @@ const seedBranches = async () => {
                 await Branch.create(branch);
                 console.log(`Branch ${branch.name} seeded.`);
             } else {
-                await Branch.findOneAndUpdate({ name: branch.name }, { branchCode: branch.branchCode });
-                console.log(`Branch ${branch.name} updated with code ${branch.branchCode}.`);
+                await Branch.findOneAndUpdate({ name: branch.name }, { 
+                    branchCode: branch.branchCode,
+                    coordinates: branch.coordinates
+                });
+                console.log(`Branch ${branch.name} updated with code ${branch.branchCode} and coordinates.`);
             }
         }
 

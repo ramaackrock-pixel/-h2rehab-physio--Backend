@@ -21,12 +21,21 @@ const appointmentSchema = new Schema({
     therapistId: {
         type: Schema.Types.ObjectId,
         ref: 'Admin', // Staff/Doctor are stored in Admin model with different roles
-        required: true
     },
     therapistName: {
         type: String,
-        required: true
     },
+    doctorId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Doctor'
+    },
+    doctorName: {
+        type: String
+    },
+    therapists: [{
+        id: { type: Schema.Types.ObjectId, ref: 'Admin' },
+        name: { type: String }
+    }],
     appointmentDate: {
         type: Date,
         required: true

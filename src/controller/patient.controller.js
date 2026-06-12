@@ -123,7 +123,7 @@ export const updatePatient = async (req, res) => {
         const patient = await Patient.findByIdAndUpdate(
             req.params.id,
             { $set: req.body },
-            { new: true, runValidators: true }
+            { new: true, runValidators: true, overwriteImmutable: true }
         );
 
         if (!patient) {

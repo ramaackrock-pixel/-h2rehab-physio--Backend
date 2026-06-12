@@ -27,6 +27,14 @@ const patientSchema = new Schema({
     address: {
         type: String
     },
+    source: {
+        type: String,
+        trim: true
+    },
+    occupation: {
+        type: String,
+        trim: true
+    },
     lastVisit: {
         type: Date,
         default: Date.now
@@ -76,6 +84,14 @@ const patientSchema = new Schema({
     initialsBg: {
         type: String,
         default: 'bg-teal-100 text-teal-700'
+    },
+    whatsappConsent: {
+        type: Boolean,
+        default: true
+    },
+    campaignSentOn: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true

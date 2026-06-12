@@ -1,4 +1,5 @@
 import { Appointment } from '../models/appointment.model.js';
+import { Patient } from '../models/patient.model.js';
 import mongoose from 'mongoose';
 import axios from 'axios';
 import FormData from 'form-data';
@@ -12,6 +13,9 @@ export const createAppointment = async (req, res) => {
             patientName,
             therapistId,
             therapistName,
+            doctorId,
+            doctorName,
+            therapists,
             appointmentDate, // Full ISO date-time string
             duration, // in minutes
             branch,
@@ -23,37 +27,40 @@ export const createAppointment = async (req, res) => {
         const startA = new Date(appointmentDate);
         const endA = new Date(startA.getTime() + duration * 60000);
 
-        // Conflict check: Does this therapist have any overlapping appointments?
-        // Logic: (startA < existingEnd) AND (endA > existingStart)
+        let conflictUserQueries = [];
+        if (doctorId) conflictUserQueries.push({ doctorId });
+        if (therapists && therapists.length > 0) {
+            const tIds = therapists.map(t => t.id);
+            conflictUserQueries.push({ 'therapists.id': { $in: tIds } });
+            conflictUserQueries.push({ therapistId: { $in: tIds } });
+        } else if (therapistId) {
+            conflictUserQueries.push({ therapistId });
+        }
 
-        // We need to find all appointments for this therapist on the same day
-        // or just any overlapping ones.
-        const overlappingAppointment = await Appointment.findOne({
-            therapistId,
-            branch,
-            status: { $ne: 'CANCELLED' },
-            $or: [
-                {
-                    // Existing appointment starts before new one ends and ends after new one starts
-                    $and: [
-                        { appointmentDate: { $lt: endA } },
-                        {
-                            $expr: {
-                                $gt: [
-                                    { $add: ["$appointmentDate", { $multiply: ["$duration", 60000] }] },
-                                    startA
-                                ]
-                            }
+        let overlappingAppointment = null;
+        if (conflictUserQueries.length > 0) {
+            overlappingAppointment = await Appointment.findOne({
+                branch,
+                status: { $ne: 'CANCELLED' },
+                $and: [
+                    { $or: conflictUserQueries },
+                    { appointmentDate: { $lt: endA } },
+                    {
+                        $expr: {
+                            $gt: [
+                                { $add: ["$appointmentDate", { $multiply: ["$duration", 60000] }] },
+                                startA
+                            ]
                         }
-                    ]
-                }
-            ]
-        });
+                    }
+                ]
+            });
+        }
 
         if (overlappingAppointment) {
             return res.status(409).json({
                 success: false,
-                message: "Appointment conflict: The therapist already has an appointment during this time.",
+                message: "Appointment conflict: The doctor or therapist already has an appointment during this time.",
                 conflict: {
                     time: overlappingAppointment.time,
                     patient: overlappingAppointment.patientName
@@ -69,13 +76,19 @@ export const createAppointment = async (req, res) => {
             .substring(0, 2)
             .toUpperCase();
 
+        const primaryTherapistId = therapists && therapists.length > 0 ? therapists[0].id : therapistId;
+        const primaryTherapistName = therapists && therapists.length > 0 ? therapists[0].name : therapistName;
+
         const appointment = new Appointment({
             patientId,
             patientName,
-            therapistId,
-            therapistName,
+            therapistId: primaryTherapistId || null,
+            therapistName: primaryTherapistName || null,
+            doctorId: doctorId || null,
+            doctorName: doctorName || null,
+            therapists,
             appointmentDate: startA,
-            time: startA.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+            time: req.body.time || startA.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
             duration,
             branch,
             sessionType,
@@ -86,6 +99,8 @@ export const createAppointment = async (req, res) => {
 
         await appointment.save();
 
+        const displayName = doctorName || primaryTherapistName || 'H2F Staff';
+
         // --- Schedule 30-min Delayed Reminder ---
         try {
             const reminderTime = startA.getTime() - (30 * 60 * 1000);
@@ -94,7 +109,7 @@ export const createAppointment = async (req, res) => {
             const job = await appointmentReminderQueue.add("appointment-reminder", {
                 appointmentId: appointment._id,
                 patientName,
-                therapistName,
+                therapistName: displayName,
                 branch,
                 time: appointment.time,
                 phone: details?.phone
@@ -111,37 +126,54 @@ export const createAppointment = async (req, res) => {
         }
 
         // --- WhatsApp Notification ---
-        let recipientPhone = (details?.phone || '').replace(/\D/g, '');
-        if (recipientPhone && !recipientPhone.startsWith('91')) {
-            recipientPhone = `91${recipientPhone}`;
-        }
-        if (!recipientPhone) recipientPhone = '919385500546'; // Using the test number as default if empty
-        const formattedDate = startA.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        const messageText = `Hello ${patientName},\n\nYour appointment with ${therapistName} at ${branch} has been successfully scheduled for ${formattedDate} at ${appointment.time}.\n\nThank you,\nH2F Rehab 🚀`;
+        if (status === 'CONFIRMED') {
+            try {
+                const patientRecord = await Patient.findOne({
+                    $or: [
+                        { pid: patientId },
+                        { _id: mongoose.Types.ObjectId.isValid(patientId) ? patientId : null }
+                    ]
+                });
 
-        try {
-            const form = new FormData();
-            form.append('secret', process.env.WHATSAPP_API_SECRET);
-            form.append('account', process.env.WHATSAPP_API_ACCOUNT);
-            form.append('recipient', recipientPhone);
-            form.append('type', 'text');
-            form.append('message', messageText);
-
-            await axios.post("https://wtservices.ackrock.com/api/send/whatsapp", form, {
-                headers: form.getHeaders(),
-            });
-            console.log("WhatsApp message sent successfully to", recipientPhone);
-        } catch (waError) {
-            if (axios.isAxiosError(waError)) {
-                if (waError.response) {
-                    console.error("WhatsApp API Error:", waError.response.status, waError.response.data);
-                } else if (waError.request) {
-                    console.error("WhatsApp Network Error - No Response:", waError.request);
+                if (patientRecord && patientRecord.whatsappConsent === false) {
+                    console.log(`Skipping WhatsApp confirmation for ${patientName}: Consent not given.`);
                 } else {
-                    console.error("WhatsApp Request Setup Error:", waError.message);
+                    let recipientPhone = (details?.phone || '').replace(/\D/g, '');
+                    if (recipientPhone && !recipientPhone.startsWith('91')) {
+                        recipientPhone = `91${recipientPhone}`;
+                    }
+                    if (!recipientPhone) recipientPhone = '919385500546'; // Using the test number as default if empty
+                    const formattedDate = startA.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    const messageText = `Hello ${patientName},\n\nYour appointment with ${displayName} at ${branch} has been successfully scheduled for ${formattedDate} at ${appointment.time}.\n\nThank you,\nH2F Rehab 🚀`;
+
+                    try {
+                        const form = new FormData();
+                        form.append('secret', process.env.WHATSAPP_API_SECRET);
+                        form.append('account', process.env.WHATSAPP_API_ACCOUNT);
+                        form.append('recipient', recipientPhone);
+                        form.append('type', 'text');
+                        form.append('message', messageText);
+
+                        await axios.post("https://wtservices.ackrock.com/api/send/whatsapp", form, {
+                            headers: form.getHeaders(),
+                        });
+                        console.log("WhatsApp message sent successfully to", recipientPhone);
+                    } catch (waError) {
+                        if (axios.isAxiosError(waError)) {
+                            if (waError.response) {
+                                console.error("WhatsApp API Error:", waError.response.status, waError.response.data);
+                            } else if (waError.request) {
+                                console.error("WhatsApp Network Error - No Response:", waError.request);
+                            } else {
+                                console.error("WhatsApp Request Setup Error:", waError.message);
+                            }
+                        } else {
+                            console.error("Failed to send WhatsApp message:", waError.message);
+                        }
+                    }
                 }
-            } else {
-                console.error("Failed to send WhatsApp message:", waError.message);
+            } catch (consentError) {
+                console.error("Error checking patient WhatsApp consent:", consentError.message);
             }
         }
         // ----------------------------
@@ -175,7 +207,13 @@ export const getAllAppointments = async (req, res) => {
             query.appointmentDate = { $gte: startOfDay, $lte: endOfDay };
         }
 
-        if (therapistId) query.therapistId = therapistId;
+        if (therapistId) {
+            query.$or = [
+                { therapistId },
+                { 'therapists.id': therapistId },
+                { doctorId: therapistId }
+            ];
+        }
         if (status) query.status = status;
         
         // Enforce branch filter for staff users; allow admins/superadmins to see all or query by branch
@@ -240,6 +278,8 @@ export const updateAppointment = async (req, res) => {
         const { id } = req.params;
         const {
             therapistId,
+            doctorId,
+            therapists,
             appointmentDate,
             duration,
             branch,
@@ -250,8 +290,7 @@ export const updateAppointment = async (req, res) => {
         const appointment = await Appointment.findById(id);
         if (!appointment) return res.status(404).json({ success: false, message: "Appointment not found" });
 
-        if (appointmentDate || therapistId || branch) {
-            const checkTherapistId = therapistId || appointment.therapistId;
+        if (appointmentDate || therapistId || doctorId || therapists || branch) {
             const checkBranch = branch || appointment.branch;
             const checkDate = appointmentDate ? new Date(appointmentDate) : appointment.appointmentDate;
             const checkDuration = duration || appointment.duration;
@@ -259,28 +298,45 @@ export const updateAppointment = async (req, res) => {
             const startA = new Date(checkDate);
             const endA = new Date(startA.getTime() + checkDuration * 60000);
 
-            const overlappingAppointment = await Appointment.findOne({
-                _id: { $ne: id },
-                therapistId: checkTherapistId,
-                branch: checkBranch,
-                status: { $ne: 'CANCELLED' },
-                $and: [
-                    { appointmentDate: { $lt: endA } },
-                    {
-                        $expr: {
-                            $gt: [
-                                { $add: ["$appointmentDate", { $multiply: ["$duration", 60000] }] },
-                                startA
-                            ]
+            let conflictUserQueries = [];
+            const dId = doctorId !== undefined ? doctorId : appointment.doctorId;
+            if (dId) conflictUserQueries.push({ doctorId: dId });
+            
+            const tList = therapists !== undefined ? therapists : appointment.therapists;
+            if (tList && tList.length > 0) {
+                const tIds = tList.map(t => t.id);
+                conflictUserQueries.push({ 'therapists.id': { $in: tIds } });
+                conflictUserQueries.push({ therapistId: { $in: tIds } });
+            } else {
+                const tId = therapistId !== undefined ? therapistId : appointment.therapistId;
+                if (tId) conflictUserQueries.push({ therapistId: tId });
+            }
+
+            let overlappingAppointment = null;
+            if (conflictUserQueries.length > 0) {
+                overlappingAppointment = await Appointment.findOne({
+                    _id: { $ne: id },
+                    branch: checkBranch,
+                    status: { $ne: 'CANCELLED' },
+                    $and: [
+                        { $or: conflictUserQueries },
+                        { appointmentDate: { $lt: endA } },
+                        {
+                            $expr: {
+                                $gt: [
+                                    { $add: ["$appointmentDate", { $multiply: ["$duration", 60000] }] },
+                                    startA
+                                ]
+                            }
                         }
-                    }
-                ]
-            });
+                    ]
+                });
+            }
 
             if (overlappingAppointment) {
                 return res.status(409).json({
                     success: false,
-                    message: "Conflict: The therapist already has an appointment in this branch during this time.",
+                    message: "Conflict: The doctor or therapist already has an appointment in this branch during this time.",
                     conflict: {
                         time: overlappingAppointment.time,
                         patient: overlappingAppointment.patientName
@@ -290,10 +346,19 @@ export const updateAppointment = async (req, res) => {
         }
 
         const updateData = { ...req.body };
+        if (updateData.doctorId === '') updateData.doctorId = null;
+        if (updateData.doctorName === '') updateData.doctorName = null;
+        if (updateData.therapistId === '') updateData.therapistId = null;
+        if (updateData.therapistName === '') updateData.therapistName = null;
+
+        if (updateData.therapists && updateData.therapists.length > 0) {
+            updateData.therapistId = updateData.therapists[0].id;
+            updateData.therapistName = updateData.therapists[0].name;
+        }
         if (req.body.appointmentDate) {
             const startA = new Date(req.body.appointmentDate);
             updateData.appointmentDate = startA;
-            updateData.time = startA.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            updateData.time = req.body.time || startA.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
             // --- Reschedule Reminder ---
             try {
@@ -305,10 +370,14 @@ export const updateAppointment = async (req, res) => {
                 const reminderTime = startA.getTime() - (30 * 60 * 1000);
                 const delay = Math.max(0, reminderTime - Date.now());
                 
+                const dName = updateData.doctorName !== undefined ? updateData.doctorName : appointment.doctorName;
+                const tName = updateData.therapistName !== undefined ? updateData.therapistName : appointment.therapistName;
+                const updatedDisplayName = dName || tName || 'H2F Staff';
+
                 const job = await appointmentReminderQueue.add("appointment-reminder", {
                     appointmentId: appointment._id,
                     patientName: updateData.patientName || appointment.patientName,
-                    therapistName: updateData.therapistName || appointment.therapistName,
+                    therapistName: updatedDisplayName,
                     branch: updateData.branch || appointment.branch,
                     time: updateData.time,
                     phone: updateData.details?.phone || appointment.details?.phone
@@ -330,6 +399,55 @@ export const updateAppointment = async (req, res) => {
             updateData,
             { new: true, runValidators: true }
         );
+
+        // --- WhatsApp Notification for Updates ---
+        if (updatedAppointment.status === 'CONFIRMED') {
+            const timeChanged = appointment.time !== updatedAppointment.time || 
+                                (appointment.appointmentDate && updatedAppointment.appointmentDate && appointment.appointmentDate.getTime() !== updatedAppointment.appointmentDate.getTime());
+            const statusChanged = appointment.status !== 'CONFIRMED';
+            
+            if (timeChanged || statusChanged) {
+                try {
+                    const patientRecord = await Patient.findOne({
+                        $or: [
+                            { pid: updatedAppointment.patientId },
+                            { _id: mongoose.Types.ObjectId.isValid(updatedAppointment.patientId) ? updatedAppointment.patientId : null }
+                        ]
+                    });
+
+                    if (patientRecord && patientRecord.whatsappConsent !== false) {
+                        let recipientPhone = (updatedAppointment.details?.phone || '').replace(/\D/g, '');
+                        if (recipientPhone && !recipientPhone.startsWith('91')) recipientPhone = `91${recipientPhone}`;
+                        if (!recipientPhone) recipientPhone = '919385500546'; // Using the test number as default if empty
+                        
+                        const formattedDate = new Date(updatedAppointment.appointmentDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                        const updatedDisplayName = updatedAppointment.doctorName || updatedAppointment.therapistName || 'H2F Staff';
+                        
+                        let messageText = '';
+                        if (timeChanged) {
+                            messageText = `Hello ${updatedAppointment.patientName},\n\nYour appointment with ${updatedDisplayName} at ${updatedAppointment.branch} has been RESCHEDULED to ${formattedDate} at ${updatedAppointment.time}.\n\nThank you,\nH2F Rehab 🚀`;
+                        } else {
+                            messageText = `Hello ${updatedAppointment.patientName},\n\nYour appointment with ${updatedDisplayName} at ${updatedAppointment.branch} has been successfully CONFIRMED for ${formattedDate} at ${updatedAppointment.time}.\n\nThank you,\nH2F Rehab 🚀`;
+                        }
+
+                        const form = new FormData();
+                        form.append('secret', process.env.WHATSAPP_API_SECRET);
+                        form.append('account', process.env.WHATSAPP_API_ACCOUNT);
+                        form.append('recipient', recipientPhone);
+                        form.append('type', 'text');
+                        form.append('message', messageText);
+
+                        await axios.post("https://wtservices.ackrock.com/api/send/whatsapp", form, {
+                            headers: form.getHeaders(),
+                        });
+                        console.log(`WhatsApp ${timeChanged ? 'reschedule' : 'confirmation'} message sent successfully to`, recipientPhone);
+                    }
+                } catch (waError) {
+                    console.error("Failed to send WhatsApp update message:", waError.message);
+                }
+            }
+        }
+        // ----------------------------------------
 
         return res.status(200).json({
             success: true,
